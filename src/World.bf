@@ -8,7 +8,7 @@ public sealed class World : IDisposable
 	private readonly Dictionary<uint64, Archetype> _typeIndex = new .() ~ DeleteDictionaryAndValues!(_);
 	private uint64 _lastArchetypeId;
 
-	private static readonly ComponentInfo[] _emptyComponents = new .() ~ delete _;
+
 	private static readonly Comparison<ComponentInfo> _componentComparer = new => CompareComponents ~ delete _;
 
 	public this()
@@ -18,7 +18,7 @@ public sealed class World : IDisposable
 	}
 
 
-	public Archetype Root { get; } = new .(this, _emptyComponents);
+	public Archetype Root { get; } = new .(this, new .());
 
 
 

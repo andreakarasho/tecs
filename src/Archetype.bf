@@ -66,6 +66,8 @@ public class Archetype
 
 		_lookupAny.Clear();
 		delete _lookupAny;
+
+		delete Components;
 	}
 
 	public ComponentInfo[] Components { get; }
@@ -306,7 +308,11 @@ public class ArchetypeChunk
 	public ~this()
 	{
 		for (var col in ref Columns)
+		{
 			Internal.StdFree(col.Data);
+			delete col.AddedTicks;
+			delete col.ChangedTicks;
+		}
 		delete Columns;
 		delete Entities;
 	}
