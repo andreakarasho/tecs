@@ -19,7 +19,7 @@ public sealed class World : IDisposable
 
 
 	public Archetype Root { get; } = new .(this, new .());
-
+	public uint64 LastArchetypeId => _lastArchetypeId;
 
 
 	public uint64 Entity(uint64 id = 0)

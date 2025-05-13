@@ -7,7 +7,7 @@ public class Archetype
 	const int ARCHETYPE_INITIAL_CAPACITY = 1;
 
 	internal const int CHUNK_SIZE = 4096;
-	internal const int CHUNK_LOG2 = 12;
+	public const int CHUNK_LOG2 = 12;
 	public const int CHUNK_THRESHOLD = CHUNK_SIZE - 1;
 
 	private readonly List<Edge> _add, _remove;
@@ -163,6 +163,23 @@ public class Archetype
 		RemoveByRow(ref fromChunk, oldRow);
 
 		return ref toChunk;
+	}
+
+	public void GetSuperSets(Span<IQueryTerm> terms, List<Archetype> matched)
+	{
+		let result = FileterMatch.Match(this, terms);
+
+		if (result == .Stop)
+			return;
+
+		if (result == .Found)
+			matched.Add(this);
+
+		if (_add.Count <= 0)
+			return;
+
+		for (let edge in ref _add)
+			edge.Archetype.GetSuperSets(terms, matched);
 	}
 
 	public Archetype TraverseLeft(uint64 nodeId)
@@ -321,6 +338,7 @@ public class ArchetypeChunk
 	public int Count { get; set; } = 0;
 
 
+	[Inline]
 	public Result<Column*> GetColumn(int column)
 	{
 		if (column < 0 || column >= Columns.Count)
@@ -329,6 +347,7 @@ public class ArchetypeChunk
 		return .Ok(&Columns[column]);
 	}
 
+	[Inline]
 	public ref T GetReferenceAt<T>(int column, int row) where T : struct
 	{
 		if (column < 0 || column > Columns.Count)
@@ -338,6 +357,7 @@ public class ArchetypeChunk
 		return ref data[row & Archetype.CHUNK_THRESHOLD];
 	}
 
+	[Inline]
 	public Span<T> GetSpan<T>(int column) where T : struct
 	{
 		if (column < 0 || column >= Columns.Count)
@@ -347,11 +367,13 @@ public class ArchetypeChunk
 		return .(data, Count);
 	}
 
+	[Inline]
 	public Span<uint64> GetEntities()
 	{
 		return .(Entities, 0, Count);
 	}
 
+	[Inline]
 	public ref uint64 GetEntityAt(int row)
 		=> ref Entities[row & Archetype.CHUNK_THRESHOLD];
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Diagnostics;
 
 namespace tecs;
 
@@ -21,8 +22,10 @@ static class Program
 			}
 		}*/
 
+		const int TOTAL_ENTITIES = 524288 * 2 * 1;
+
 		var world = scope World();
-		let e0 = world.Entity();
+		/*let e0 = world.Entity();
 		let e1 = world.Entity();
 		let e2 = world.Entity();
 
@@ -36,7 +39,54 @@ static class Program
 
 		var p = ref world.Get<Position>(e3);
 		var v = ref world.Get<Velocity>(e3);
-		var vv = ref world.Get<Tag>(e3);
+		var vv = ref world.Get<Tag>(e3);*/
+
+		for (var i < TOTAL_ENTITIES)
+		{
+			let ee = world.Entity();
+			world.Set(ee, Position());
+			world.Set(ee, Velocity());
+		}
+
+		let posId = world.Component<Position>().Id;
+		let velId = world.Component<Velocity>().Id;
+		var query = scope Query(world, WithTerm(posId), WithTerm(velId));
+
+
+		int64 start = 0;
+		int64 last = 0;
+
+		Stopwatch sw = scope .();
+		sw.Start();
+
+		while (true)
+		{
+			for (var i < 3600)
+			{
+				var iter = query.Iter();
+				while (iter.Next())
+				{
+					var span0 = iter.Data<Position>(0);
+					var span1 = iter.Data<Velocity>(1);
+					let count = iter.Count;
+
+					for (var j < count)
+					{
+						var p0 = ref span0[[Unchecked]j];
+						var p1 = ref span1[[Unchecked]j];
+
+						p0.X *= p1.X;
+						p0.Y *= p1.Y;
+					}
+				}
+			}
+
+			last = start;
+			start = sw.ElapsedMilliseconds;
+
+			Console.WriteLine(scope $"query done in {(start - last)} ms");
+		}
+
 
 		let count = 4096;
 		var arr0 = scope Position[count];
@@ -151,8 +201,8 @@ struct PositionEnumerator<T0, T1> : IRefEnumerator<(T0*, T1*)>
 	public PositionEnumerator<T0, T1> GetEnumerator() => this;
 }
 
-struct Position { public int32 X, Y; }
-struct Velocity { public int32 X, Y; }
+struct Position { public float X, Y, Z; }
+struct Velocity { public float X, Y; }
 struct Tag { }
 
 struct ArraySt
