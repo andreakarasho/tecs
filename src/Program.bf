@@ -28,7 +28,15 @@ static class Program
 
 		world.Delete(e1);
 		let e3 = world.Entity();
+		world.Set(e3, Position() { X = 1, Y = 33 });
+		world.Set(e3, Velocity() { X = -12, Y = 999 });
+		world.Add<Tag>(e3);
 
+		//world.Delete(e3);
+
+		var p = ref world.Get<Position>(e3);
+		var v = ref world.Get<Velocity>(e3);
+		var vv = ref world.Get<Tag>(e3);
 
 		let count = 4096;
 		var arr0 = scope Position[count];

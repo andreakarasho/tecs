@@ -9,6 +9,7 @@ public sealed class World : IDisposable
 	private uint64 _lastArchetypeId;
 
 	private static readonly ComponentInfo[] _emptyComponents = new .() ~ delete _;
+	private static readonly Comparison<ComponentInfo> _componentComparer = new => CompareComponents ~ delete _;
 
 	public this()
 	{
@@ -46,10 +47,114 @@ public sealed class World : IDisposable
 		_entities.Remove(removedId);
 	}
 
+	public void Add<T>(uint64 id) where T : struct
+	{
+		let meta = ref Component<T>();
+
+		Attach(id, meta.Id, 0);
+	}
+
+	public void Set<T>(uint64 id, T component) where T : struct
+	{
+		let meta = ref Component<T>();
+
+		var (raw, row) = Attach(id, meta.Id, meta.Size);
+		var array = (T*)raw;
+		array[row & Archetype.CHUNK_THRESHOLD] = component;
+	}
+
+	public ref T Get<T>(uint64 id) where T : struct
+	{
+		let meta = ref Component<T>();
+		let record = ref GetRecord(id);
+		let column = record.Archetype.GetComponentIndex(meta.Id);
+		return ref record.Chunk.GetReferenceAt<T>(column, record.Row);
+	}
+
+	public readonly ref ComponentInfo Component<T>() where T : struct
+	{
+		return ref Lookup.Component<T>.Value;
+	}
+
+	public void BeginDeferred() { }
+
+	public void EndDeferred() { }
+
 	public void Dispose()
 	{
 	}
 
+
+
+	private (void*, int) Attach(uint64 id, uint64 cmp, int size)
+	{
+		var record = ref GetRecord(id);
+		let oldArch = record.Archetype;
+
+		var column = size > 0 ? oldArch.GetComponentIndex(cmp) : oldArch.GetAnyIndex(cmp);
+		if (column >= 0)
+		{
+			if (size > 0)
+			{
+				// TODO: mark changed
+			}
+
+			return (size > 0 ? record.Chunk.Columns[column].Data : null, record.Row);
+		}
+
+		BeginDeferred();
+
+		var foundArch = oldArch.TraverseRight(cmp);
+		if (foundArch == null)
+		{
+			var hash = 0UL;
+			var found = false;
+
+			for (let c in ref oldArch.Components)
+			{
+				if (!found && c.Id > cmp)
+				{
+					hash = NiceHash.Combine(hash, cmp);
+					found = true;
+				}
+
+				hash = NiceHash.Combine(hash, c.Id);
+			}
+
+			if (!found)
+				hash = NiceHash.Combine(hash, cmp);
+
+			if (!_typeIndex.TryGetValue(hash, out foundArch))
+			{
+				var arr = new ComponentInfo[oldArch.Components.Count + 1];
+				oldArch.Components.CopyTo(arr, 0);
+				arr[^1] = .(cmp, size);
+				Array.Sort(arr, _componentComparer);
+				foundArch = NewArchetype(oldArch, arr, cmp);
+			}
+		}
+
+		record.Chunk = record.Archetype.MoveEntity(foundArch, ref record.Chunk, record.Row, false, out record.Row);
+		record.Archetype = foundArch;
+
+		EndDeferred();
+
+		column = size > 0 ? foundArch.GetComponentIndex(cmp) : foundArch.GetAnyIndex(cmp);
+		if (size > 0)
+		{
+			// TODO mark added
+		}
+
+		return (size > 0 ? record.Chunk.Columns[column].Data : null, record.Row);
+	}
+
+	private Archetype NewArchetype(Archetype oldArch, ComponentInfo[] sign, uint64 id)
+	{
+		var archetype = Root.InsertVertex(oldArch, sign, id);
+		_typeIndex.Add(archetype.Id, archetype);
+		_lastArchetypeId = archetype.Id;
+		return archetype;
+	}
 
 	private ref EcsRecord NewRecord(out uint64 newId, uint64 id = 0)
 	{
@@ -78,6 +183,9 @@ public sealed class World : IDisposable
 		str..AppendF("entity {} is dead or doesn't exist anymore!", id);
 		Runtime.FatalError(str);
 	}
+
+
+	private static int CompareComponents(ComponentInfo a, ComponentInfo b) => a.Id <=> b.Id;
 }
 
 struct EcsRecord

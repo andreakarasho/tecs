@@ -11,7 +11,7 @@ public class Archetype
 	public const int CHUNK_THRESHOLD = CHUNK_SIZE - 1;
 
 	private readonly List<Edge> _add, _remove;
-	private readonly Dictionary<uint64, int> _lookup;
+	private readonly Dictionary<uint64, int> _lookupAny, _lookupComponents;
 	private int _count;
 	private ArchetypeChunk[] _chunks;
 
@@ -22,8 +22,8 @@ public class Archetype
 		Components = sign;
 
 		var hash = 0UL;
-		var dict = scope Dictionary<uint64, int>();
-		var allDict = scope Dictionary<uint64, int>();
+		var dict = new Dictionary<uint64, int>();
+		var allDict = new Dictionary<uint64, int>();
 		var maxId = -1;
 
 		for (var i = 0, cur = 0; i < sign.Count; ++i)
@@ -33,7 +33,7 @@ public class Archetype
 			if (sign[i].Size > 0)
 			{
 				dict.Add(sign[i].Id, cur++);
-				maxId = Math.Max(maxId, (int)sign[i].Id);
+				maxId = Math.Max(maxId, (int32)sign[i].Id);
 			}
 
 			allDict.Add(sign[i].Id, i);
@@ -41,7 +41,9 @@ public class Archetype
 
 		Id = hash;
 
-		_lookup = allDict;
+		_lookupAny = allDict;
+		_lookupComponents = dict;
+
 		_add = new .();
 		_remove = new .();
 		_chunks = new ArchetypeChunk[ARCHETYPE_INITIAL_CAPACITY];
@@ -58,6 +60,12 @@ public class Archetype
 
 		_remove.Clear();
 		delete _remove;
+
+		_lookupComponents.Clear();
+		delete _lookupComponents;
+
+		_lookupAny.Clear();
+		delete _lookupAny;
 	}
 
 	public ComponentInfo[] Components { get; }
@@ -93,11 +101,14 @@ public class Archetype
 	public ref ArchetypeChunk GetChunk(int index)
 		=> ref _chunks[index >> CHUNK_LOG2];
 
+	public int GetComponentIndex(uint64 id)
+		=> _lookupComponents.TryGetValue(id, let val) ? val : -1;
+
 	public int GetAnyIndex(uint64 id)
-		=> _lookup.TryGetValue(id, let val) ? val : -1;
+		=> _lookupAny.TryGetValue(id, let val) ? val : -1;
 
 	public bool HasIndex(uint64 id)
-		=> _lookup.ContainsKey(id);
+		=> _lookupAny.ContainsKey(id);
 
 	public ref ArchetypeChunk Add(uint64 id, out int row)
 	{
@@ -119,6 +130,54 @@ public class Archetype
 		MakeEdges(a, b, id);
 		InsertVertex(vertex);
 		return vertex;
+	}
+
+	public ref ArchetypeChunk MoveEntity(Archetype newArch, ref ArchetypeChunk fromChunk, int oldRow, bool isRemove, out int newRow)
+	{
+		var toChunk = ref newArch.Add(fromChunk.GetEntityAt(oldRow), out newRow);
+
+		var i = 0, j = 0;
+		let count = isRemove ? newArch.Components.Count : Components.Count;
+
+		var x = (isRemove ? &j : &i);
+		var y = (!isRemove ? &j : &i);
+
+		let srcIdx = oldRow & CHUNK_THRESHOLD;
+		let dstIdx = newRow & CHUNK_THRESHOLD;
+
+		let items = Components;
+		let newItems = newArch.Components;
+
+		for (; *x < count; (*x)++,(*y)++)
+		{
+			while (items[i].Id != newItems[j].Id)
+			{
+				(*y)++;
+			}
+
+			fromChunk.Columns[i].CopyTo(srcIdx, ref toChunk.Columns[j], dstIdx);
+		}
+
+		RemoveByRow(ref fromChunk, oldRow);
+
+		return ref toChunk;
+	}
+
+	public Archetype TraverseLeft(uint64 nodeId)
+		=> Traverse(this, nodeId, false);
+
+	public Archetype TraverseRight(uint64 nodeId)
+		=> Traverse(this, nodeId, true);
+
+	private static Archetype Traverse(Archetype root, uint64 nodeId, bool onAdd)
+	{
+		for (let edge in ref (onAdd ? root._add : root._remove))
+		{
+			if (edge.Id == nodeId)
+				return edge.Archetype;
+		}
+
+		return null;
 	}
 
 	private uint64 RemoveByRow(ref ArchetypeChunk chunk, int row)
@@ -221,7 +280,10 @@ public struct Column
 
 	public void CopyTo(int srcIdx, ref Column dest, int dstIdx)
 	{
-		dest.Data[dstIdx * DataSize] = Data[srcIdx * DataSize];
+		Internal.MemCpy(
+			(uint8*)dest.Data + dstIdx * DataSize,
+			(uint8*)Data + srcIdx * DataSize,
+			DataSize);
 		dest.ChangedTicks[dstIdx] = ChangedTicks[srcIdx];
 		dest.AddedTicks[dstIdx] = AddedTicks[srcIdx];
 	}
@@ -259,6 +321,15 @@ public class ArchetypeChunk
 			return .Err;
 
 		return .Ok(&Columns[column]);
+	}
+
+	public ref T GetReferenceAt<T>(int column, int row) where T : struct
+	{
+		if (column < 0 || column > Columns.Count)
+			return ref (*(T*)null);
+
+		let data = (T*)Columns[column].Data;
+		return ref data[row & Archetype.CHUNK_THRESHOLD];
 	}
 
 	public Span<T> GetSpan<T>(int column) where T : struct
