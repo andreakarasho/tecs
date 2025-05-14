@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Diagnostics;
+using tecs;
 
 namespace tecs;
 
@@ -8,20 +9,6 @@ static class Program
 {
 	public static void Main(String[] args)
 	{
-		/*var set = scope SparseSet<uint64>();
-
-
-		while (true)
-		{
-			switch (set.CreateNew(let id))
-			{
-				case .Ok(let val):
-					break;
-				case .Err:
-					break;
-			}
-		}*/
-
 		const int TOTAL_ENTITIES = 524288 * 2 * 1;
 
 		var world = scope World();
@@ -44,13 +31,13 @@ static class Program
 		for (var i < TOTAL_ENTITIES)
 		{
 			let ee = world.Entity();
-			world.Set(ee, Position());
-			world.Set(ee, Velocity());
+			world.Set(ee, Position() { X = i + 1 });
+			world.Set(ee, Velocity() { X = i + 1 });
 		}
 
 		let posId = world.Component<Position>().Id;
 		let velId = world.Component<Velocity>().Id;
-		var query = scope Query(world, WithTerm(posId), WithTerm(velId));
+		let query = scope Query(world, WithTerm(posId), WithTerm(velId));
 
 
 		int64 start = 0;
@@ -64,11 +51,20 @@ static class Program
 			for (var i < 3600)
 			{
 				var iter = query.Iter();
-				while (iter.Next())
+				var data = Data2<(Position*, Velocity*)>(iter);
+
+				for (var (pos, vel) in ref data)
 				{
-					var span0 = iter.Data<Position>(0);
-					var span1 = iter.Data<Velocity>(1);
+					pos.X *= vel.X;
+					pos.Y *= vel.Y;
+				}
+
+				/*while (iter.Next())
+				{
 					let count = iter.Count;
+
+					/*var span0 = iter.Data<Position>(0);
+					var span1 = iter.Data<Velocity>(1);
 
 					for (var j < count)
 					{
@@ -77,8 +73,20 @@ static class Program
 
 						p0.X *= p1.X;
 						p0.Y *= p1.Y;
+					}*/
+
+					var p0 = iter.GetColumn<Position>(0);
+					var v0 = iter.GetColumn<Velocity>(1);
+
+					for (var j < count)
+					{
+						p0.Value.X *= v0.Value.X;
+						p0.Value.Y *= v0.Value.Y;
+
+						p0.Next();
+						v0.Next();
 					}
-				}
+				}*/
 			}
 
 			last = start;
@@ -86,126 +94,158 @@ static class Program
 
 			Console.WriteLine(scope $"query done in {(start - last)} ms");
 		}
-
-
-		let count = 4096;
-		var arr0 = scope Position[count];
-		var arr1 = scope Velocity[count];
-
-		(var a, var b) = (1, 2);
-
-		var en = PositionEnumerator<Position, Velocity>(arr0, arr1);
-
-		for (var (pos, vel) in ref en)
-		{
-			pos.X += 1;
-			vel.Y -= 1;
-		}
-
-		var query = scope Query<(Position, Velocity), void>();
-	}
-
-	static String F()
-	{
-		var s = scope String();
-		return s;
-	}
-
-	static uint64 expensinve_calculation(int32 n)
-	{
-		uint64 sum = 0;
-		for (int32 i = 0; i < n; ++i)
-			sum += (uint64)(i * i);
-		return sum;
 	}
 }
 
-
-class Query<TData, TFilter>
-	where TData : struct, ValueType
-	where TFilter : struct
+/*struct Data2<TArgs> where TArgs : Tuple
 {
 	public this()
 	{
-		TData.Do();
+		Args = default;
+		TArgs.T();
 	}
-}
 
-public interface IValue
-{
-	public static void Do();
-}
-
-namespace System
-{
-	extension ValueType : tecs.IValue
+	public void X(params TArgs a)
 	{
-		public static void Do()
-		{
-		}
 	}
-}
 
+	public TArgs Args { get mut; }
+}*/
 
-public struct Data<T0, T1> where T0 : struct where T1 : struct
+/*struct Data<T0, T1> : IRefEnumerator<(T0*, T1*)>
+	where T0 : struct
+	where T1 : struct
 {
-}
-
-struct PositionEnumerator<T0, T1> : IRefEnumerator<(T0*, T1*)>
-{
-	private T0[] _arr0;
-	private T1[] _arr1;
+	private QueryIterator _it;
+	private DataRow<T0*> _arr0;
+	private DataRow<T1*> _arr1;
+	private Span<uint64> _entities;
 	private int _index, _count;
-	private (T0*, T1*) _current;
 
-	public this(T0[] arr0, T1[] arr1)
+
+	public this(QueryIterator it)
 	{
-		_arr0 = arr0;
-		_arr1 = arr1;
+		_it = it;
+		_arr0 = default;
+		_arr1 = default;
 		_index = -1;
-		_count = arr0.Count;
-		_current = default;
+		_count = -1;
+		_entities = .();
 	}
 
-	public ref (T0*, T1*) CurrentRef
+	/*public ref (T0*, T1*) CurrentRef
 	{
 		[Inline]
 		get mut
 		{
-			return ref _current;
+			return ref (_arr0.Value, _arr1.Value);
 		}
-	}
+	}*/
 
 	[Inline]
 	public Result<(T0*, T1*)> GetNextRef() mut
 	{
-		if (!MoveNext())
-			return .Err;
-		return _current;
+		if (++_index >= _count)
+		{
+			if (!_it.Next())
+				return .Err;
+
+			_arr0 = _it.GetColumn<T0*>(0);
+			_arr1 = _it.GetColumn<T1*>(1);
+			_entities = _it.Entities();
+
+			_index = 0;
+			_count = _it.Count;
+		}
+		else
+		{
+			_arr0.Next();
+			_arr1.Next();
+		}
+
+		return .Ok((_arr0.Value, _arr1.Value));
 	}
 
 	[Inline]
-	public bool MoveNext() mut
-	{
-		if (++_index >= _count)
-		{
-			return false;
-		}
-
-		_current.0 = &_arr0[[Unchecked]_index];
-		_current.1 = &_arr1[[Unchecked]_index];
-
-		return true;
-	}
-
-	public PositionEnumerator<T0, T1> GetEnumerator() => this;
-}
+	public Data<T0, T1> GetEnumerator() => this;
+}*/
 
 struct Position { public float X, Y, Z; }
 struct Velocity { public float X, Y; }
+struct Mass { public int32 Value; }
 struct Tag { }
 
-struct ArraySt
+
+public struct Data2<TArgs> : IRefEnumerator<TArgs>
+	where TArgs : Tuple
 {
-	public Array Data;
+	private QueryIterator _it;
+	private int _index, _count;
+
+	public this(QueryIterator it)
+	{
+		_it = it;
+		_index = -1;
+		_count = -1;
+	}
+
+	[OnCompile(.TypeInit), Comptime]
+	public static void Generate()
+	{
+		let type = typeof(TArgs);
+
+		var f = scope String();
+		var n = scope String();
+		var r = scope String("(");
+
+		var i = 0;
+		for (let field in type.GetFields())
+		{
+			Compiler.EmitTypeBody(typeof(Self), scope $"""
+				private DataRow<{field.FieldType.UnderlyingType}> _{field.Name} = default;\n
+				""");
+
+			f..Append(scope $"_{field.Name} = _it.GetColumn<{field.FieldType.UnderlyingType}>({field.FieldIdx});\n");
+			n..Append(scope $"_{field.Name}.Next();\n");
+			r..Append(scope $"_{field.Name}.Value");
+
+			if (i < type.FieldCount - 1)
+			{
+				r..Append(", ");
+			}
+
+			i += 1;
+		}
+
+		r..Append(")");
+
+		if (type.FieldCount == 0)
+		{
+			r.Set("default");
+		}
+
+		Compiler.EmitTypeBody(typeof(Self), scope $"""
+			public Result<TArgs> GetNextRef() mut
+			{{
+				if (++_index >= _count)
+				{{
+					if (!_it.Next())
+						return .Err;
+	
+					{f}
+					_index = 0;
+					_count = _it.Count;
+				}}
+				else
+				{{
+					{n}
+				}}
+	
+				return .Ok({r});
+			}}
+
+			""");
+	}
+
+	public Data2<TArgs> GetEnumerator() => this;
 }

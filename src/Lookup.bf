@@ -18,21 +18,13 @@ public static class Lookup
 	{
 		public static readonly uint64 Id = (.)Interlocked.Increment(ref _index);
 		public static readonly int Size = sizeof(T);
-		public static readonly String Name = GetName() ~ delete _;
+		public static readonly String Name = typeof(T).GetName(.. new .()) ~ delete _;
 		public static readonly ComponentInfo Value = .(Id, Size);
 
 
 		static this()
 		{
 			_components.Add(Value.Id, Value);
-		}
-
-
-		private static String GetName()
-		{
-			var str = new String();
-			typeof(T).GetName(str);
-			return str;
 		}
 	}
 }

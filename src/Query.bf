@@ -82,12 +82,59 @@ public struct QueryIterator
 		_chunkEnumerator.CurrentRef.Count;
 
 	[Inline]
+	public Span<uint64> Entities()
+	{
+		var span = _chunkEnumerator.Current.GetEntities();
+		if (!span.IsEmpty)
+			span = span.Slice(_startSafe, Count);
+		return span;
+	}
+
+	[Inline]
 	public Span<T> Data<T>(int index) where T : struct
 	{
 		var span = _chunkEnumerator.Current.GetSpan<T>(_indices[index]);
 		if (!span.IsEmpty)
 			span = span.Slice(_startSafe, Count);
 		return span;
+	}
+
+	[Inline]
+	public DataRow<T> GetColumn<T>(int index) where T : struct
+	{
+		var dr = DataRow<T>();
+
+		if (index < 0 || index >= _indices.Length)
+		{
+			dr.Value = null;
+			dr.Amount = 0;
+
+			return dr;
+		}
+
+		let i = _indices[index];
+		if (i < 0)
+		{
+			dr.Value = null;
+			dr.Amount = 0;
+
+			return dr;
+		}
+
+
+		if (_chunkEnumerator.CurrentRef.GetColumn(i) case .Ok(var column))
+		{
+			dr.Value = (T*)column.Data;
+			dr.Value += _startSafe;
+			dr.Amount = 1;
+		}
+		else
+		{
+			dr.Value = null;
+			dr.Amount = 0;
+		}
+
+		return dr;
 	}
 
 	[Inline]
@@ -108,6 +155,7 @@ public struct QueryIterator
 
 				if (_archetypeEnumerator.CurrentRef.Count <= 0)
 					continue;
+
 				break;
 			}
 
@@ -117,6 +165,15 @@ public struct QueryIterator
 			_chunkEnumerator = arch.Chunks.Slice(_start >> Archetype.CHUNK_LOG2).GetEnumerator();
 		}
 	}
+}
+
+public struct DataRow<T> where T : struct
+{
+	public T* Value;
+	public int Amount;
+
+	[Inline]
+	public void Next() mut => Value += Amount;
 }
 
 

@@ -300,8 +300,8 @@ public struct Column
 	public void CopyTo(int srcIdx, ref Column dest, int dstIdx)
 	{
 		Internal.MemCpy(
-			(uint8*)dest.Data + dstIdx * DataSize,
-			(uint8*)Data + srcIdx * DataSize,
+			(uint8*)dest.Data + (dstIdx * DataSize),
+			(uint8*)Data + (srcIdx * DataSize),
 			DataSize);
 		dest.ChangedTicks[dstIdx] = ChangedTicks[srcIdx];
 		dest.AddedTicks[dstIdx] = AddedTicks[srcIdx];

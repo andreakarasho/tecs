@@ -50,7 +50,6 @@ public sealed class World : IDisposable
 	public void Add<T>(uint64 id) where T : struct
 	{
 		let meta = ref Component<T>();
-
 		Attach(id, meta.Id, 0);
 	}
 
@@ -63,12 +62,25 @@ public sealed class World : IDisposable
 		array[row & Archetype.CHUNK_THRESHOLD] = component;
 	}
 
+	public void Unset<T>(uint64 id) where T : struct
+	{
+		let meta = ref Component<T>();
+		Detach(id, meta.Id);
+	}
+
 	public ref T Get<T>(uint64 id) where T : struct
 	{
 		let meta = ref Component<T>();
 		let record = ref GetRecord(id);
 		let column = record.Archetype.GetComponentIndex(meta.Id);
 		return ref record.Chunk.GetReferenceAt<T>(column, record.Row);
+	}
+
+	public bool Has<T>(uint64 id) where T : struct
+	{
+		let meta = ref Component<T>();
+		var record = ref GetRecord(id);
+		return IsAttached(ref record, meta.Id);
 	}
 
 	public readonly ref ComponentInfo Component<T>() where T : struct
@@ -147,6 +159,56 @@ public sealed class World : IDisposable
 
 		return (size > 0 ? record.Chunk.Columns[column].Data : null, record.Row);
 	}
+
+	private void Detach(uint64 id, uint64 cmp)
+	{
+		var record = ref GetRecord(id);
+		let oldArch = record.Archetype;
+
+		if (oldArch.GetAnyIndex(cmp) < 0)
+			return;
+
+		BeginDeferred();
+
+		var foundArch = oldArch.TraverseLeft(cmp);
+		if (foundArch == null && oldArch.Components.Count - 1 <= 0)
+		{
+			foundArch = Root;
+		}
+
+		if (foundArch == null)
+		{
+			var hash = 0UL;
+
+			for (var c in ref oldArch.Components)
+			{
+				if (c.Id != cmp)
+					hash = NiceHash.Combine(hash, c.Id);
+			}
+
+			if (!_typeIndex.TryGetValue(hash, out foundArch))
+			{
+				var arr = new ComponentInfo[oldArch.Components.Count - 1];
+				for (var i = 0, j = 0; i < oldArch.Components.Count; ++i)
+				{
+					if (oldArch.Components[i].Id != cmp)
+					{
+						arr[j++] = oldArch.Components[i];
+					}
+				}
+
+				foundArch = NewArchetype(oldArch, arr, cmp);
+			}
+		}
+
+		record.Chunk = record.Archetype.MoveEntity(foundArch, ref record.Chunk, record.Row, true, out record.Row);
+		record.Archetype = foundArch;
+
+		EndDeferred();
+	}
+
+	private bool IsAttached(ref EcsRecord record, uint64 id)
+		=> record.Archetype.HasIndex(id);
 
 	private Archetype NewArchetype(Archetype oldArch, ComponentInfo[] sign, uint64 id)
 	{
