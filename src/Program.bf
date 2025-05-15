@@ -225,6 +225,7 @@ public struct Data2<TArgs> : IRefEnumerator<TArgs>
 		}
 
 		Compiler.EmitTypeBody(typeof(Self), scope $"""
+			[Inline]
 			public Result<TArgs> GetNextRef() mut
 			{{
 				if (++_index >= _count)
