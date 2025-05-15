@@ -32,7 +32,7 @@ static class Program
 		{
 			let ee = world.Entity();
 			world.Set(ee, Position() { X = i + 1 });
-			world.Set(ee, Velocity() { X = i + 1 });
+			world.Set(ee, Velocity() { Y = i + 1 });
 		}
 
 		let posId = world.Component<Position>().Id;
@@ -51,9 +51,9 @@ static class Program
 			for (var i < 3600)
 			{
 				var iter = query.Iter();
-				var data = Data2<(Position*, Velocity*)>(iter);
+				var data = Data<(Entity, Position*, Velocity*)>(iter);
 
-				for (var (pos, vel) in ref data)
+				for (var (ent, pos, vel) in ref data)
 				{
 					pos.X *= vel.X;
 					pos.Y *= vel.Y;
@@ -97,156 +97,8 @@ static class Program
 	}
 }
 
-/*struct Data2<TArgs> where TArgs : Tuple
-{
-	public this()
-	{
-		Args = default;
-		TArgs.T();
-	}
-
-	public void X(params TArgs a)
-	{
-	}
-
-	public TArgs Args { get mut; }
-}*/
-
-/*struct Data<T0, T1> : IRefEnumerator<(T0*, T1*)>
-	where T0 : struct
-	where T1 : struct
-{
-	private QueryIterator _it;
-	private DataRow<T0*> _arr0;
-	private DataRow<T1*> _arr1;
-	private Span<uint64> _entities;
-	private int _index, _count;
-
-
-	public this(QueryIterator it)
-	{
-		_it = it;
-		_arr0 = default;
-		_arr1 = default;
-		_index = -1;
-		_count = -1;
-		_entities = .();
-	}
-
-	/*public ref (T0*, T1*) CurrentRef
-	{
-		[Inline]
-		get mut
-		{
-			return ref (_arr0.Value, _arr1.Value);
-		}
-	}*/
-
-	[Inline]
-	public Result<(T0*, T1*)> GetNextRef() mut
-	{
-		if (++_index >= _count)
-		{
-			if (!_it.Next())
-				return .Err;
-
-			_arr0 = _it.GetColumn<T0*>(0);
-			_arr1 = _it.GetColumn<T1*>(1);
-			_entities = _it.Entities();
-
-			_index = 0;
-			_count = _it.Count;
-		}
-		else
-		{
-			_arr0.Next();
-			_arr1.Next();
-		}
-
-		return .Ok((_arr0.Value, _arr1.Value));
-	}
-
-	[Inline]
-	public Data<T0, T1> GetEnumerator() => this;
-}*/
 
 struct Position { public float X, Y, Z; }
 struct Velocity { public float X, Y; }
 struct Mass { public int32 Value; }
 struct Tag { }
-
-
-public struct Data2<TArgs> : IRefEnumerator<TArgs>
-	where TArgs : Tuple
-{
-	private QueryIterator _it;
-	private int _index, _count;
-
-	public this(QueryIterator it)
-	{
-		_it = it;
-		_index = -1;
-		_count = -1;
-	}
-
-	[OnCompile(.TypeInit), Comptime]
-	public static void Generate()
-	{
-		let type = typeof(TArgs);
-
-		var f = scope String();
-		var n = scope String();
-		var r = scope String("(");
-
-		var i = 0;
-		for (let field in type.GetFields())
-		{
-			Compiler.EmitTypeBody(typeof(Self), scope $"""
-				private DataRow<{field.FieldType.UnderlyingType}> _{field.Name} = default;\n
-				""");
-
-			f..Append(scope $"_{field.Name} = _it.GetColumn<{field.FieldType.UnderlyingType}>({field.FieldIdx});\n");
-			n..Append(scope $"_{field.Name}.Next();\n");
-			r..Append(scope $"_{field.Name}.Value");
-
-			if (i < type.FieldCount - 1)
-			{
-				r..Append(", ");
-			}
-
-			i += 1;
-		}
-
-		r..Append(")");
-
-		if (type.FieldCount == 0)
-		{
-			r.Set("default");
-		}
-
-		Compiler.EmitTypeBody(typeof(Self), scope $"""
-			[Inline]
-			public Result<TArgs> GetNextRef() mut
-			{{
-				if (++_index >= _count)
-				{{
-					if (!_it.Next())
-						return .Err;
-	
-					{f}
-					_index = 0;
-					_count = _it.Count;
-				}}
-				else
-				{{
-					{n}
-				}}
-	
-				return .Ok({r});
-			}}
-
-			""");
-	}
-
-	public Data2<TArgs> GetEnumerator() => this;
-}

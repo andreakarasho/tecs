@@ -2,7 +2,9 @@ using System;
 using System.Collections;
 namespace tecs;
 
-public class Query
+using internal tecs;
+
+public sealed class Query
 {
 	private static readonly Comparison<IQueryTerm> _termComparer = new => CompareTerms ~ delete _;
 
@@ -46,7 +48,7 @@ public class Query
 	{
 		Match();
 
-		return .(_matcherArchetypes, TermAccess, _indices, 0, 0);
+		return .(World, _matcherArchetypes, TermAccess, _indices, 0, 0);
 	}
 
 	private static int CompareTerms(IQueryTerm a, IQueryTerm b) => a.Id() <=> b.Id();
@@ -54,6 +56,56 @@ public class Query
 
 public class QueryBuilder
 {
+	private readonly World _world;
+	private readonly Dictionary<uint64, IQueryTerm> _terms = new .() ~ { _.Clear(); delete _; };
+	private Query _query;
+
+	internal this(World world)
+	{
+		_world = world;
+	}
+
+
+	public Self With<T>(uint64 id) where T : struct
+		=> With(_world.Component<T>().Id);
+
+	public Self With(uint64 id)
+		=> Term(WithTerm(id));
+
+	public Self Without<T>(uint64 id) where T : struct
+		=> Without(_world.Component<T>().Id);
+
+	public Self Without(uint64 id)
+		=> Term(WithoutTerm(id));
+
+	public Self Optional<T>(uint64 id) where T : struct
+		=> Optional(_world.Component<T>().Id);
+
+	public Self Optional(uint64 id)
+		=> Term(OptionalTerm(id));
+
+	public Self Term(IQueryTerm term)
+	{
+		_terms[term.Id()] = term;
+		return this;
+	}
+
+	public Query Build()
+	{
+		if (_query != null)
+		{
+			delete _query;
+			_query = null;
+		}
+
+		var tmp = scope IQueryTerm[_terms.Count];
+		var i = 0;
+		for (var c in _terms.Values)
+			tmp[i++] = c;
+
+		_query ??= new .(_world, params tmp);
+		return _query;
+	}
 }
 
 public struct QueryIterator
@@ -64,8 +116,9 @@ public struct QueryIterator
 	private readonly Span<int> _indices;
 	private readonly int _start, _startSafe, _count;
 
-	public this(Span<Archetype> archetypes, Span<IQueryTerm> terms, Span<int> indices, int start, int count)
+	public this(World world, Span<Archetype> archetypes, Span<IQueryTerm> terms, Span<int> indices, int start, int count)
 	{
+		World = world;
 		_archetypeEnumerator = archetypes.GetEnumerator();
 		_terms = terms;
 		_indices = indices;
@@ -74,6 +127,8 @@ public struct QueryIterator
 		_count = count;
 		_chunkEnumerator = default;
 	}
+
+	internal readonly World World { get; }
 
 	[Inline]
 	public readonly int Count => _count > 0 ?
@@ -102,7 +157,7 @@ public struct QueryIterator
 	[Inline]
 	public DataRow<T> GetColumn<T>(int index) where T : struct
 	{
-		var dr = DataRow<T>();
+		DataRow<T> dr = ?;
 
 		if (index < 0 || index >= _indices.Length)
 		{
@@ -112,7 +167,7 @@ public struct QueryIterator
 			return dr;
 		}
 
-		let i = _indices[index];
+		let i = _indices[[Unchecked]index];
 		if (i < 0)
 		{
 			dr.Value = null;
@@ -229,7 +284,7 @@ public struct WithoutTerm : IQueryTerm
 	}
 }
 
-public struct OptinalTerm : IQueryTerm
+public struct OptionalTerm : IQueryTerm
 {
 	private readonly uint64 _id;
 	public this(uint64 id) => _id = id;

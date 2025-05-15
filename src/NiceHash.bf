@@ -1,7 +1,7 @@
 using System;
 namespace tecs;
 
-static class NiceHash
+internal static class NiceHash
 {
 	private const uint64 PRIME = 0x9E3779B185EBCA87UL;
 

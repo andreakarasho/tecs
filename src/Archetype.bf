@@ -2,7 +2,9 @@ using System;
 using System.Collections;
 namespace tecs;
 
-public class Archetype
+using internal tecs;
+
+public sealed class Archetype
 {
 	const int ARCHETYPE_INITIAL_CAPACITY = 1;
 
@@ -16,7 +18,7 @@ public class Archetype
 	private ArchetypeChunk[] _chunks;
 
 
-	public this(World world, ComponentInfo[] sign)
+	internal this(World world, ComponentInfo[] sign)
 	{
 		World = world;
 		Components = sign;
@@ -74,11 +76,11 @@ public class Archetype
 	public World World { get; }
 	public uint64 Id { get; }
 	public int Count => _count;
-	public readonly Span<ArchetypeChunk> Chunks => .(_chunks, 0, (_count + CHUNK_SIZE - 1) >> CHUNK_LOG2);
-	public int EmptyChunks => _chunks.Count - ((_count + CHUNK_SIZE - 1) >> CHUNK_LOG2);
+	internal readonly Span<ArchetypeChunk> Chunks => .(_chunks, 0, (_count + CHUNK_SIZE - 1) >> CHUNK_LOG2);
+	internal int EmptyChunks => _chunks.Count - ((_count + CHUNK_SIZE - 1) >> CHUNK_LOG2);
 
 
-	public ref ArchetypeChunk GetOrCreateChunk(int index)
+	internal ref ArchetypeChunk GetOrCreateChunk(int index)
 	{
 		var index;
 		index >>= CHUNK_LOG2;
@@ -100,7 +102,7 @@ public class Archetype
 		return ref chunk;
 	}
 
-	public ref ArchetypeChunk GetChunk(int index)
+	internal ref ArchetypeChunk GetChunk(int index)
 		=> ref _chunks[index >> CHUNK_LOG2];
 
 	public int GetComponentIndex(uint64 id)
@@ -112,7 +114,7 @@ public class Archetype
 	public bool HasIndex(uint64 id)
 		=> _lookupAny.ContainsKey(id);
 
-	public ref ArchetypeChunk Add(uint64 id, out int row)
+	internal ref ArchetypeChunk Add(uint64 id, out int row)
 	{
 		var chunk = ref GetOrCreateChunk(_count);
 		chunk.GetEntityAt(chunk.Count++) = id;
@@ -120,7 +122,7 @@ public class Archetype
 		return ref chunk;
 	}
 
-	public uint64 Remove(ref EcsRecord record)
+	public uint64 Remove(ref Record record)
 		=> RemoveByRow(ref record.Chunk, record.Row);
 
 	public Archetype InsertVertex(Archetype left, ComponentInfo[] sign, uint64 id)
@@ -134,7 +136,7 @@ public class Archetype
 		return vertex;
 	}
 
-	public ref ArchetypeChunk MoveEntity(Archetype newArch, ref ArchetypeChunk fromChunk, int oldRow, bool isRemove, out int newRow)
+	internal ref ArchetypeChunk MoveEntity(Archetype newArch, ref ArchetypeChunk fromChunk, int oldRow, bool isRemove, out int newRow)
 	{
 		var toChunk = ref newArch.Add(fromChunk.GetEntityAt(oldRow), out newRow);
 
@@ -273,60 +275,73 @@ public class Archetype
 	}
 }
 
-public struct Column
+internal sealed class Column
 {
-	public readonly void* Data;
-	public readonly int DataSize;
-	public uint[] ChangedTicks, AddedTicks;
+	private readonly uint8* _data;
 
-	public this(ComponentInfo componentInfo, int chunkSize)
+	[AllowAppend]
+	internal this(ComponentInfo componentInfo, int chunkSize)
 	{
-		Data = Internal.StdMalloc(componentInfo.Size * chunkSize);
+		#unwarn
+		let data = append uint8[componentInfo.Size * chunkSize];
+
 		DataSize = componentInfo.Size;
-		ChangedTicks = new uint[chunkSize];
-		AddedTicks = new uint[chunkSize];
+		ChangedTicks = new uint32[chunkSize];
+		AddedTicks = new uint32[chunkSize];
+
+		_data = ((uint8*)Internal.UnsafeCastToPtr(this) + typeof(Self).InstanceSize);
 	}
 
-	public void MarkChanged(int index, uint ticks)
+	public readonly int32 DataSize;
+	public uint32[] ChangedTicks, AddedTicks;
+
+	[Inline]
+	internal uint8* Data => _data;
+
+	[Inline]
+	public void MarkChanged(int index, uint32 ticks)
 	{
 		ChangedTicks[index] = ticks;
 	}
 
-	public void MarkAdded(int index, uint ticks)
+	[Inline]
+	public void MarkAdded(int index, uint32 ticks)
 	{
 		AddedTicks[index] = ticks;
 	}
 
+	[Inline]
 	public void CopyTo(int srcIdx, ref Column dest, int dstIdx)
 	{
-		Internal.MemCpy(
-			(uint8*)dest.Data + (dstIdx * DataSize),
-			(uint8*)Data + (srcIdx * DataSize),
-			DataSize);
+		let spanSrc = Span<uint8>(Data + srcIdx * DataSize, DataSize);
+		let spanDst = Span<uint8>(dest.Data + dstIdx * DataSize, DataSize);
+		spanSrc.CopyTo(spanDst);
+
 		dest.ChangedTicks[dstIdx] = ChangedTicks[srcIdx];
 		dest.AddedTicks[dstIdx] = AddedTicks[srcIdx];
 	}
 }
 
-public class ArchetypeChunk
+internal class ArchetypeChunk
 {
 	public readonly Column[] Columns;
 	public readonly uint64[] Entities;
 
+	[AllowAppend]
 	public this(Span<ComponentInfo> sign, int chunkSize)
 	{
 		Entities = new uint64[chunkSize];
 		Columns = new Column[sign.Length];
 
 		for (var i < sign.Length)
-			Columns[i] = .(sign[i], chunkSize);
+			Columns[i] = new .(sign[i], chunkSize);
 	}
 
 	public ~this()
 	{
 		for (var col in ref Columns)
 		{
-			Internal.StdFree(col.Data);
+			//delete col.Data;
 			delete col.AddedTicks;
 			delete col.ChangedTicks;
 		}
@@ -335,16 +350,16 @@ public class ArchetypeChunk
 	}
 
 
-	public int Count { get; set; } = 0;
+	public int Count { get; internal set; } = 0;
 
 
 	[Inline]
-	public Result<Column*> GetColumn(int column)
+	public Result<Column> GetColumn(int column)
 	{
 		if (column < 0 || column >= Columns.Count)
 			return .Err;
 
-		return .Ok(&Columns[column]);
+		return .Ok(Columns[[Unchecked]column]);
 	}
 
 	[Inline]
@@ -353,7 +368,7 @@ public class ArchetypeChunk
 		if (column < 0 || column > Columns.Count)
 			return ref (*(T*)null);
 
-		let data = (T*)Columns[column].Data;
+		let data = (T*)Columns[[Unchecked]column].Data;
 		return ref data[row & Archetype.CHUNK_THRESHOLD];
 	}
 
@@ -363,7 +378,7 @@ public class ArchetypeChunk
 		if (column < 0 || column >= Columns.Count)
 			return .();
 
-		let data = (T*)Columns[column].Data;
+		let data = (T*)Columns[[Unchecked]column].Data;
 		return .(data, Count);
 	}
 
@@ -376,6 +391,14 @@ public class ArchetypeChunk
 	[Inline]
 	public ref uint64 GetEntityAt(int row)
 		=> ref Entities[row & Archetype.CHUNK_THRESHOLD];
+
+	[Inline]
+	public void MarkChanged(int column, int row, uint32 ticks)
+		=> Columns[column].MarkChanged(row & Archetype.CHUNK_THRESHOLD, ticks);
+
+	[Inline]
+	public void MarkAdded(int column, int row, uint32 ticks)
+		=> Columns[column].MarkAdded(row & Archetype.CHUNK_THRESHOLD, ticks);
 }
 
 public struct Edge
@@ -386,12 +409,12 @@ public struct Edge
 
 public struct ComponentInfo
 {
-	public this(uint64 id, int size)
+	public this(uint64 id, int32 size)
 	{
 		Id = id;
 		Size = size;
 	}
 
 	public readonly uint64 Id;
-	public readonly int Size;
+	public readonly int32 Size;
 }

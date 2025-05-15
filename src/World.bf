@@ -2,12 +2,14 @@ using System;
 using System.Collections;
 namespace tecs;
 
+using internal tecs;
+
 public sealed class World : IDisposable
 {
-	private readonly SparseSet<EcsRecord> _entities = new .() ~ { _.Clear(); delete _; };
+	private readonly SparseSet<Record> _entities = new .() ~ { _.Clear(); delete _; };
 	private readonly Dictionary<uint64, Archetype> _typeIndex = new .() ~ DeleteDictionaryAndValues!(_);
 	private uint64 _lastArchetypeId;
-
+	private uint32 _ticks;
 
 	private static readonly Comparison<ComponentInfo> _componentComparer = new => CompareComponents ~ delete _;
 
@@ -19,7 +21,7 @@ public sealed class World : IDisposable
 
 
 	public Archetype Root { get; } = new .(this, new .());
-	public uint64 LastArchetypeId => _lastArchetypeId;
+	internal uint64 LastArchetypeId => _lastArchetypeId;
 
 
 	public uint64 Entity(uint64 id = 0)
@@ -88,9 +90,12 @@ public sealed class World : IDisposable
 		return ref Lookup.Component<T>.Value;
 	}
 
+	public QueryBuilder QueryBuilder() => new QueryBuilder(this);
+
 	public void BeginDeferred() { }
 
 	public void EndDeferred() { }
+
 
 	public void Dispose()
 	{
@@ -98,7 +103,7 @@ public sealed class World : IDisposable
 
 
 
-	private (void*, int) Attach(uint64 id, uint64 cmp, int size)
+	private (uint8*, int) Attach(uint64 id, uint64 cmp, int32 size)
 	{
 		var record = ref GetRecord(id);
 		let oldArch = record.Archetype;
@@ -108,7 +113,7 @@ public sealed class World : IDisposable
 		{
 			if (size > 0)
 			{
-				// TODO: mark changed
+				record.Chunk.MarkChanged(column, record.Row, _ticks);
 			}
 
 			return (size > 0 ? record.Chunk.Columns[column].Data : null, record.Row);
@@ -154,7 +159,7 @@ public sealed class World : IDisposable
 		column = size > 0 ? foundArch.GetComponentIndex(cmp) : foundArch.GetAnyIndex(cmp);
 		if (size > 0)
 		{
-			// TODO mark added
+			record.Chunk.MarkAdded(column, record.Row, _ticks);
 		}
 
 		return (size > 0 ? record.Chunk.Columns[column].Data : null, record.Row);
@@ -207,7 +212,7 @@ public sealed class World : IDisposable
 		EndDeferred();
 	}
 
-	private bool IsAttached(ref EcsRecord record, uint64 id)
+	private bool IsAttached(ref Record record, uint64 id)
 		=> record.Archetype.HasIndex(id);
 
 	private Archetype NewArchetype(Archetype oldArch, ComponentInfo[] sign, uint64 id)
@@ -218,7 +223,7 @@ public sealed class World : IDisposable
 		return archetype;
 	}
 
-	private ref EcsRecord NewRecord(out uint64 newId, uint64 id = 0)
+	private ref Record NewRecord(out uint64 newId, uint64 id = 0)
 	{
 		if (id > 0)
 		{
@@ -234,7 +239,7 @@ public sealed class World : IDisposable
 		Runtime.FatalError("error on creating a new record!");
 	}
 
-	public ref EcsRecord GetRecord(uint64 id)
+	internal ref Record GetRecord(uint64 id)
 	{
 		if (_entities.Get(id) case .Ok(let record))
 		{
@@ -250,7 +255,7 @@ public sealed class World : IDisposable
 	private static int CompareComponents(ComponentInfo a, ComponentInfo b) => a.Id <=> b.Id;
 }
 
-struct EcsRecord
+internal struct Record
 {
 	public Archetype Archetype;
 	public ArchetypeChunk Chunk;
