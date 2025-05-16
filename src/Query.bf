@@ -30,6 +30,7 @@ public sealed class Query
 		_indices.SetAll(-1);
 	}
 
+
 	public World World { get; }
 	public List<IQueryTerm> TermAccess { get; } = new .() ~ { _.Clear(); delete _; }
 
@@ -66,27 +67,28 @@ public class QueryBuilder
 	}
 
 
-	public Self With<T>(uint64 id) where T : struct
+	public Self With<T>() where T : struct
 		=> With(_world.Component<T>().Id);
 
 	public Self With(uint64 id)
-		=> Term(WithTerm(id));
+		=> Term(new WithTerm(id));
 
-	public Self Without<T>(uint64 id) where T : struct
+	public Self Without<T>() where T : struct
 		=> Without(_world.Component<T>().Id);
 
 	public Self Without(uint64 id)
-		=> Term(WithoutTerm(id));
+		=> Term(new WithoutTerm(id));
 
-	public Self Optional<T>(uint64 id) where T : struct
+	public Self Optional<T>() where T : struct
 		=> Optional(_world.Component<T>().Id);
 
 	public Self Optional(uint64 id)
-		=> Term(OptionalTerm(id));
+		=> Term(new OptionalTerm(id));
 
 	public Self Term(IQueryTerm term)
 	{
-		_terms[term.Id()] = term;
+		let id = term.Id();
+		_terms[id] = term;
 		return this;
 	}
 
@@ -100,8 +102,8 @@ public class QueryBuilder
 
 		var tmp = scope IQueryTerm[_terms.Count];
 		var i = 0;
-		for (var c in _terms.Values)
-			tmp[i++] = c;
+		for (var (k, val) in _terms)
+			tmp[i++] = val;
 
 		_query ??= new .(_world, params tmp);
 		return _query;
@@ -148,6 +150,9 @@ public struct QueryIterator
 	[Inline]
 	public Span<T> Data<T>(int index) where T : struct
 	{
+		if (index < 0 || index >= _indices.Length)
+			return .();
+
 		var span = _chunkEnumerator.Current.GetSpan<T>(_indices[index]);
 		if (!span.IsEmpty)
 			span = span.Slice(_startSafe, Count);
@@ -179,7 +184,7 @@ public struct QueryIterator
 
 		if (_chunkEnumerator.CurrentRef.GetColumn(i) case .Ok(var column))
 		{
-			dr.Value = (T*)column.Data;
+			dr.Value = (T*)column.Data.Ptr;
 			dr.Value += _startSafe;
 			dr.Amount = 1;
 		}
@@ -256,7 +261,7 @@ public interface IQueryTerm
 	ArchetypeSearchResult Match(Archetype archetype);
 }
 
-public struct WithTerm : IQueryTerm
+public class WithTerm : IQueryTerm
 {
 	private readonly uint64 _id;
 	public this(uint64 id) => _id = id;
@@ -270,7 +275,7 @@ public struct WithTerm : IQueryTerm
 	}
 }
 
-public struct WithoutTerm : IQueryTerm
+public class WithoutTerm : IQueryTerm
 {
 	private readonly uint64 _id;
 	public this(uint64 id) => _id = id;
@@ -284,7 +289,7 @@ public struct WithoutTerm : IQueryTerm
 	}
 }
 
-public struct OptionalTerm : IQueryTerm
+public class OptionalTerm : IQueryTerm
 {
 	private readonly uint64 _id;
 	public this(uint64 id) => _id = id;

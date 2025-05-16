@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Diagnostics;
 using tecs;
+using System.Reflection;
 
 namespace tecs;
 
@@ -11,7 +12,11 @@ static class Program
 	{
 		const int TOTAL_ENTITIES = 524288 * 2 * 1;
 
+
 		var world = scope World();
+		var scheduler = scope Scheduler(world);
+
+
 		/*let e0 = world.Entity();
 		let e1 = world.Entity();
 		let e2 = world.Entity();
@@ -30,14 +35,21 @@ static class Program
 
 		for (var i < TOTAL_ENTITIES)
 		{
-			let ee = world.Entity();
-			world.Set(ee, Position() { X = i + 1 });
-			world.Set(ee, Velocity() { Y = i + 1 });
+			var ee = world.Entity();
+			ee.Set(Position() { X = i + 1 });
+			ee.Set(Velocity() { Y = i + 1 });
+		}
+
+		var q = Query<(Position*, Velocity*), (With<Position>, With<Velocity>)>.Generate(world);
+		var q2 = Query<(Entity, Position*, Velocity*), With<Position>>.Generate(world);
+
+		for (var (pos, vel) in ref q)
+		{
 		}
 
 		let posId = world.Component<Position>().Id;
 		let velId = world.Component<Velocity>().Id;
-		let query = scope Query(world, WithTerm(posId), WithTerm(velId));
+		let query = scope Query(world, scope WithTerm(posId), scope WithTerm(velId));
 
 
 		int64 start = 0;

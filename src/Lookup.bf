@@ -19,7 +19,7 @@ internal static class Lookup
 		public static readonly uint64 Id = (.)Interlocked.Increment(ref _index);
 		public static readonly int32 Size = sizeof(T);
 		public static readonly String Name = typeof(T).GetName(.. new .()) ~ delete _;
-		public static readonly ComponentInfo Value = .(Id, Size);
+		public static readonly ComponentInfo Value = .(Id, Size, Name);
 
 
 		static this()

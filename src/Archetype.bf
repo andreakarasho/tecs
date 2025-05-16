@@ -277,26 +277,20 @@ public sealed class Archetype
 
 internal sealed class Column
 {
-	private readonly uint8* _data;
-
-	[AllowAppend]
 	internal this(ComponentInfo componentInfo, int chunkSize)
 	{
 		#unwarn
-		let data = append uint8[componentInfo.Size * chunkSize];
 
+		Data = new uint8[componentInfo.Size * chunkSize];
 		DataSize = componentInfo.Size;
 		ChangedTicks = new uint32[chunkSize];
 		AddedTicks = new uint32[chunkSize];
-
-		_data = ((uint8*)Internal.UnsafeCastToPtr(this) + typeof(Self).InstanceSize);
 	}
 
 	public readonly int32 DataSize;
+	public uint8[] Data;
 	public uint32[] ChangedTicks, AddedTicks;
 
-	[Inline]
-	internal uint8* Data => _data;
 
 	[Inline]
 	public void MarkChanged(int index, uint32 ticks)
@@ -313,9 +307,11 @@ internal sealed class Column
 	[Inline]
 	public void CopyTo(int srcIdx, ref Column dest, int dstIdx)
 	{
-		let spanSrc = Span<uint8>(Data + srcIdx * DataSize, DataSize);
+		/*let spanSrc = Span<uint8>(Data + srcIdx * DataSize, DataSize);
 		let spanDst = Span<uint8>(dest.Data + dstIdx * DataSize, DataSize);
-		spanSrc.CopyTo(spanDst);
+		spanSrc.CopyTo(spanDst);*/
+
+		Data.CopyTo(dest.Data, srcIdx * DataSize, dstIdx * DataSize, DataSize);
 
 		dest.ChangedTicks[dstIdx] = ChangedTicks[srcIdx];
 		dest.AddedTicks[dstIdx] = AddedTicks[srcIdx];
@@ -341,7 +337,7 @@ internal class ArchetypeChunk
 	{
 		for (var col in ref Columns)
 		{
-			//delete col.Data;
+			delete col.Data;
 			delete col.AddedTicks;
 			delete col.ChangedTicks;
 		}
@@ -368,7 +364,7 @@ internal class ArchetypeChunk
 		if (column < 0 || column > Columns.Count)
 			return ref (*(T*)null);
 
-		let data = (T*)Columns[[Unchecked]column].Data;
+		let data = (T*)Columns[[Unchecked]column].Data.Ptr;
 		return ref data[row & Archetype.CHUNK_THRESHOLD];
 	}
 
@@ -378,7 +374,7 @@ internal class ArchetypeChunk
 		if (column < 0 || column >= Columns.Count)
 			return .();
 
-		let data = (T*)Columns[[Unchecked]column].Data;
+		let data = (T*)Columns[[Unchecked]column].Data.Ptr;
 		return .(data, Count);
 	}
 
@@ -409,12 +405,14 @@ public struct Edge
 
 public struct ComponentInfo
 {
-	public this(uint64 id, int32 size)
+	public this(uint64 id, int32 size, StringView name)
 	{
 		Id = id;
 		Size = size;
+		Name = name;
 	}
 
 	public readonly uint64 Id;
 	public readonly int32 Size;
+	public readonly StringView Name;
 }

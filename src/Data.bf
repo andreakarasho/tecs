@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Reflection;
 namespace tecs;
 
 public struct Data<TArgs> : IRefEnumerator<TArgs>
@@ -26,7 +27,7 @@ public struct Data<TArgs> : IRefEnumerator<TArgs>
 
 		var i = 0;
 		var index = 0;
-		for (let field in type.GetFields())
+		for (let field in type.GetFields(.Instance | .Public))
 		{
 			if (field.FieldType == typeof(Entity))
 			{
@@ -86,4 +87,84 @@ public struct Data<TArgs> : IRefEnumerator<TArgs>
 	}
 
 	public Data<TArgs> GetEnumerator() => this;
+}
+
+internal struct DataGen<TArgs>
+	where TArgs : Tuple
+{
+	[OnCompile(.TypeInit), Comptime]
+	public static void Generate()
+	{
+		let type = typeof(TArgs);
+
+		var m = scope String("public static void Build(QueryBuilder builder) {\n");
+
+		for (let field in type.GetFields(.Instance | .Public))
+		{
+			if (field.FieldType == typeof(Entity))
+				continue;
+
+			m..Append(scope $"builder.With<{field.FieldType.UnderlyingType}>();\n");
+		}
+
+		m.Append("}");
+
+		Compiler.EmitTypeBody(typeof(Self), m);
+	}
+}
+
+internal struct FilterGen<TArgs>
+	where TArgs : struct
+{
+	[OnCompile(.TypeInit), Comptime]
+	public static void Generate()
+	{
+		let type = typeof(TArgs);
+
+		var m = scope String("public static void Build(QueryBuilder builder) {\n");
+
+		if (type.IsTuple)
+		{
+			for (let field in type.GetFields(.Instance | .Public))
+			{
+				AppendType(field.FieldType, m);
+			}
+		}
+		else
+		{
+			AppendType(type, m);
+		}
+
+		m.Append("}");
+
+		Compiler.EmitTypeBody(typeof(Self), m);
+	}
+
+	[Comptime]
+	private static void AppendType(Type type, String m)
+	{
+		if (var gen = type as SpecializedGenericType)
+		{
+			if (gen.UnspecializedType == typeof(With<>))
+			{
+				m..Append("builder.With<");
+			}
+			else if (gen.UnspecializedType == typeof(Without<>))
+			{
+				m..Append("builder.Without<");
+			}
+			else if (gen.UnspecializedType == typeof(Optional<>))
+			{
+				m..Append("builder.Optional<");
+			}
+			else
+			{
+				Runtime.Assert(false);
+			}
+
+			Runtime.Assert(gen.GenericParamCount == 1);
+			let first = gen.GetGenericArg(0);
+			m..Append(scope $"{first}>();\n");
+		}
+	}
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Diagnostics;
 namespace tecs;
 
 using internal tecs;
@@ -8,15 +9,18 @@ public sealed class World : IDisposable
 {
 	private readonly SparseSet<Record> _entities = new .() ~ { _.Clear(); delete _; };
 	private readonly Dictionary<uint64, Archetype> _typeIndex = new .() ~ DeleteDictionaryAndValues!(_);
+	private readonly uint64 _startingIds;
 	private uint64 _lastArchetypeId;
 	private uint32 _ticks;
 
 	private static readonly Comparison<ComponentInfo> _componentComparer = new => CompareComponents ~ delete _;
 
-	public this()
+	public this(uint64 startingIds = 256)
 	{
 		_typeIndex.Add(Root.Id, Root);
 		_lastArchetypeId = Root.Id;
+		_entities.MaxId = startingIds;
+		_startingIds = startingIds;
 	}
 
 
@@ -24,17 +28,23 @@ public sealed class World : IDisposable
 	internal uint64 LastArchetypeId => _lastArchetypeId;
 
 
-	public uint64 Entity(uint64 id = 0)
+	public Entity Entity(uint64 id = 0)
 	{
 		var id;
 		if (id == 0 || !Exists(id))
 		{
-			var record = ref NewRecord(out id);
+			var record = ref NewRecord(out id, id);
 			record.Archetype = Root;
 			record.Chunk = Root.Add(id, out record.Row);
 		}
 
-		return id;
+		return .(this, id);
+	}
+
+	public Entity Entity<T>() where T : struct
+	{
+		let meta = ref Component<T>();
+		return Entity(meta.Id);
 	}
 
 	public bool Exists(uint64 id)
@@ -52,14 +62,14 @@ public sealed class World : IDisposable
 	public void Add<T>(uint64 id) where T : struct
 	{
 		let meta = ref Component<T>();
-		Attach(id, meta.Id, 0);
+		Attach(id, meta.Id, 0, meta.Name);
 	}
 
 	public void Set<T>(uint64 id, T component) where T : struct
 	{
 		let meta = ref Component<T>();
 
-		var (raw, row) = Attach(id, meta.Id, meta.Size);
+		var (raw, row) = Attach(id, meta.Id, meta.Size, meta.Name);
 		var array = (T*)raw;
 		array[row & Archetype.CHUNK_THRESHOLD] = component;
 	}
@@ -87,7 +97,18 @@ public sealed class World : IDisposable
 
 	public readonly ref ComponentInfo Component<T>() where T : struct
 	{
-		return ref Lookup.Component<T>.Value;
+		let meta = ref Lookup.Component<T>.Value;
+
+		Debug.Assert(meta.Id < _startingIds, "your components are exceeding the max number of components ids. Specify the components count to the World .ctor");
+
+		if (!Exists(meta.Id))
+		{
+			var e = Entity(meta.Id);
+			Debug.Assert(e.Id == meta.Id);
+			e.Set(meta);
+		}
+
+		return ref meta;
 	}
 
 	public QueryBuilder QueryBuilder() => new QueryBuilder(this);
@@ -103,7 +124,7 @@ public sealed class World : IDisposable
 
 
 
-	private (uint8*, int) Attach(uint64 id, uint64 cmp, int32 size)
+	private (uint8*, int) Attach(uint64 id, uint64 cmp, int32 size, StringView name)
 	{
 		var record = ref GetRecord(id);
 		let oldArch = record.Archetype;
@@ -116,7 +137,7 @@ public sealed class World : IDisposable
 				record.Chunk.MarkChanged(column, record.Row, _ticks);
 			}
 
-			return (size > 0 ? record.Chunk.Columns[column].Data : null, record.Row);
+			return (size > 0 ? record.Chunk.Columns[column].Data.Ptr : null, record.Row);
 		}
 
 		BeginDeferred();
@@ -145,7 +166,7 @@ public sealed class World : IDisposable
 			{
 				var arr = new ComponentInfo[oldArch.Components.Count + 1];
 				oldArch.Components.CopyTo(arr, 0);
-				arr[^1] = .(cmp, size);
+				arr[^1] = .(cmp, size, name);
 				Array.Sort(arr, _componentComparer);
 				foundArch = NewArchetype(oldArch, arr, cmp);
 			}
@@ -162,7 +183,7 @@ public sealed class World : IDisposable
 			record.Chunk.MarkAdded(column, record.Row, _ticks);
 		}
 
-		return (size > 0 ? record.Chunk.Columns[column].Data : null, record.Row);
+		return (size > 0 ? record.Chunk.Columns[column].Data.Ptr : null, record.Row);
 	}
 
 	private void Detach(uint64 id, uint64 cmp)
