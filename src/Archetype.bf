@@ -287,6 +287,13 @@ internal sealed class Column
 		AddedTicks = new uint32[chunkSize];
 	}
 
+	internal ~this()
+	{
+		delete Data;
+		delete ChangedTicks;
+		delete AddedTicks;
+	}
+
 	public readonly int32 DataSize;
 	public uint8[] Data;
 	public uint32[] ChangedTicks, AddedTicks;
@@ -323,7 +330,6 @@ internal class ArchetypeChunk
 	public readonly Column[] Columns;
 	public readonly uint64[] Entities;
 
-	[AllowAppend]
 	public this(Span<ComponentInfo> sign, int chunkSize)
 	{
 		Entities = new uint64[chunkSize];
@@ -336,11 +342,8 @@ internal class ArchetypeChunk
 	public ~this()
 	{
 		for (var col in ref Columns)
-		{
-			delete col.Data;
-			delete col.AddedTicks;
-			delete col.ChangedTicks;
-		}
+			delete col;
+
 		delete Columns;
 		delete Entities;
 	}

@@ -10,7 +10,7 @@ static class Program
 {
 	public static void Main(String[] args)
 	{
-		const int TOTAL_ENTITIES = 524288 * 2 * 1;
+		const int TOTAL_ENTITIES = 524288 * 2 * 1 / 4;
 
 
 		var world = scope World();
@@ -64,7 +64,8 @@ static class Program
 		Stopwatch sw = scope .();
 		sw.Start();
 
-		while (true)
+		var ll = 0;
+		while (ll++ < 1)
 		{
 			for (var i < 3600)
 			{

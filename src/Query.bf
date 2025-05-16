@@ -30,11 +30,6 @@ public sealed class Query
 		_indices.SetAll(-1);
 	}
 
-	public ~this()
-	{
-		Console.WriteLine();
-	}
-
 
 	public World World { get; }
 	public List<IQueryTerm> TermAccess { get; } = new .() ~ { _.Clear(); delete _; }

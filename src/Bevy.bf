@@ -9,7 +9,7 @@ using internal tecs;
 public class Scheduler
 {
 	private LinkedList<FuncSystem>[] _systems = new LinkedList<FuncSystem>[(.)Stages.OnExit + 1] ~ { for (let list in _) { ClearAndDeleteItems!(list); delete list; } delete _; }
-	private readonly Commands _commands ~ delete _commands;
+	private readonly List<ISystemParam> _systemParamsCache = new .() ~ DeleteContainerAndItems!(_);
 
 	public this(World world)
 	{
@@ -18,8 +18,7 @@ public class Scheduler
 		for (var i < _systems.Count)
 			_systems[i] = new .();
 
-		_commands = new .(World);
-		AddSystemParam(_commands);
+		AddSystemParam(new Commands(World));
 	}
 
 	public World World { get; }
@@ -28,15 +27,20 @@ public class Scheduler
 	public void AddResource<T>(T resource)
 		=> AddSystemParam(new Res<T>() { Value = resource });
 
-	public void AddSystemParam<T>(T param) where T : ISystemParam<World>
+	public void AddSystemParam<T>(T param) where T : ISystemParam<Scheduler>, class
 	{
+		_systemParamsCache.Add(param);
+
 		var ph = Placeholder<T>();
 		ph.Value = param;
 		World.Entity<Placeholder<T>>().Set(ph);
 	}
 
-	public bool ResourceExists<T>() where T : ISystemParam<World>
+	public bool ResourceExists<T>() where T : ISystemParam<Scheduler>
 		=> World.Entity<Placeholder<T>>().Has<Placeholder<T>>();
+
+	public T GetResource<T>() where T : ISystemParam<Scheduler>
+		=> World.Entity<Placeholder<T>>().Get<Placeholder<T>>().Value;
 
 
 	public void RunOnce()
@@ -87,13 +91,13 @@ public class Scheduler
 	}*/
 
 	public FuncSystem OnUpdate<T0>(function void(T0) fn)
-		where T0 : ISystemParam<World>, IIntoSystemParam<World, T0>
+		where T0 : ISystemParam<Scheduler>, IIntoSystemParam<Scheduler, T0>
 	{
-		delegate bool(SystemTicks, World, delegate bool()) dlg = new [=fn] (ticks, world, conditions) =>
+		delegate bool(SystemTicks, World, delegate bool()) dlg = new [=fn, =this] (ticks, world, conditions) =>
 			{
 				if (conditions?.Invoke() ?? true)
 				{
-					let t0 = T0.Generate(world);
+					let t0 = T0.Generate(this);
 
 					t0.Lock(ticks);
 					fn(t0);
@@ -203,54 +207,50 @@ public enum Stages
 	OnExit
 }
 
-public sealed class Commands : SystemParam<World>, IIntoSystemParam<World, Commands>
+public sealed class Commands : SystemParam<Scheduler>, IIntoSystemParam<Scheduler, Commands>
 {
 	private readonly World _world;
 
 	internal this(World world) => _world = world;
 
 
-	public static Commands Generate(World arg)
+	public static Commands Generate(Scheduler arg)
 	{
-		if (arg.Entity<Placeholder<Commands>>().Has<Placeholder<Commands>>())
-			return arg.Entity<Placeholder<Commands>>().Get<Placeholder<Commands>>().Value;
+		if (arg.ResourceExists<Commands>())
+			return arg.GetResource<Commands>();
 
-		var ph = Placeholder<Commands>();
-		ph.Value = new Commands(arg);
-
-		arg.Entity<Placeholder<Commands>>().Set(ph);
-
-		return ph.Value;
+		Runtime.Assert(false);
+		return default;
 	}
 }
 
-public sealed class Res<T> : SystemParam<World>, IIntoSystemParam<World, Res<T>>
+public sealed class Res<T> : SystemParam<Scheduler>, IIntoSystemParam<Scheduler, Res<T>>
 {
 	private T _value;
 	public ref T Value => ref _value;
 
 
-	public static Res<T> Generate(World arg)
+	public static Res<T> Generate(Scheduler arg)
 	{
-		if (arg.Entity<Placeholder<Res<T>>>().Has<Placeholder<Res<T>>>())
-			return arg.Entity<Placeholder<Res<T>>>().Get<Placeholder<Res<T>>>().Value;
+		if (arg.ResourceExists<Res<T>>())
+			return arg.GetResource<Res<T>>();
 
-		var ph = Placeholder<Res<T>>();
-		ph.Value = null;
+		var res = new Res<T>();
+		res.Value = default;
 
-		arg.Entity<Placeholder<Res<T>>>().Set(ph);
+		arg.AddSystemParam(res);
 
-		return ph.Value;
+		return res;
 	}
 }
 
-public sealed class Local<T> : SystemParam<World>, IIntoSystemParam<World, Local<T>>
+public sealed class Local<T> : SystemParam<Scheduler>, IIntoSystemParam<Scheduler, Local<T>>
 {
 	private T _value;
 	public ref T Value => ref _value;
 
 
-	public static Local<T> Generate(World arg)
+	public static Local<T> Generate(Scheduler arg)
 	{
 		var ph = Placeholder<Local<T>>();
 		ph.Value = null;
@@ -259,7 +259,7 @@ public sealed class Local<T> : SystemParam<World>, IIntoSystemParam<World, Local
 	}
 }
 
-public sealed class Query<D, F> : SystemParam<World>, IIntoSystemParam<World, Query<D, F>>
+public sealed class Query<D, F> : SystemParam<Scheduler>, IIntoSystemParam<Scheduler, Query<D, F>>
 	where D : Tuple
 	where F : struct
 {
@@ -271,22 +271,21 @@ public sealed class Query<D, F> : SystemParam<World>, IIntoSystemParam<World, Qu
 	public Data<D> GetEnumerator() => Data<D>(_query.Iter());
 
 
-	public static Query<D, F> Generate(World arg)
+	public static Query<D, F> Generate(Scheduler arg)
 	{
-		if (arg.Entity<Placeholder<Query<D, F>>>().Has<Placeholder<Query<D, F>>>())
-			return arg.Entity<Placeholder<Query<D, F>>>().Get<Placeholder<Query<D, F>>>().Value;
+		if (arg.ResourceExists<Query<D, F>>())
+			return arg.GetResource<Query<D, F>>();
 
-		let builder = scope QueryBuilder(arg);
+		let builder = scope QueryBuilder(arg.World);
 
 		let x = DataGen<D>.Build(builder);
 		let y = FilterGen<F>.Build(builder);
 
-		var ph = Placeholder<Query<D, F>>();
-		ph.Value = new .(builder.Build());
+		var query = new Query<D, F>(builder.Build());
 
-		arg.Entity<Placeholder<Query<D, F>>>().Set(ph);
+		arg.AddSystemParam(query);
 
-		return ph.Value;
+		return query;
 	}
 }
 
