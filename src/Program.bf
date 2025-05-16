@@ -25,7 +25,7 @@ static class Program
 		let e3 = world.Entity();
 		world.Set(e3, Position() { X = 1, Y = 33 });
 		world.Set(e3, Velocity() { X = -12, Y = 999 });
-		world.Add<Tag>(e3);
+		world.Add<Tag>(e3); 
 
 		//world.Delete(e3);
 
@@ -40,16 +40,22 @@ static class Program
 			ee.Set(Velocity() { Y = i + 1 });
 		}
 
-		var q = Query<(Position*, Velocity*), (With<Position>, With<Velocity>)>.Generate(world);
+
+
+		function void(Query<(Position*, Velocity*), (With<Position>, With<Velocity>)>) fn = => system;
+
+		scheduler.OnUpdate(fn);
+
+		/*var q = Query<(Position*, Velocity*), (With<Position>, With<Velocity>)>.Generate(world);
 		var q2 = Query<(Entity, Position*, Velocity*), With<Position>>.Generate(world);
 
 		for (var (pos, vel) in ref q)
 		{
-		}
+		}*/
 
-		let posId = world.Component<Position>().Id;
+		/*let posId = world.Component<Position>().Id;
 		let velId = world.Component<Velocity>().Id;
-		let query = scope Query(world, scope WithTerm(posId), scope WithTerm(velId));
+		let query = scope Query(world, scope WithTerm(posId), scope WithTerm(velId));*/
 
 
 		int64 start = 0;
@@ -62,14 +68,15 @@ static class Program
 		{
 			for (var i < 3600)
 			{
-				var iter = query.Iter();
+				scheduler.RunOnce();
+				/*var iter = query.Iter();
 				var data = Data<(Entity, Position*, Velocity*)>(iter);
 
 				for (var (ent, pos, vel) in ref data)
 				{
 					pos.X *= vel.X;
 					pos.Y *= vel.Y;
-				}
+				}*/
 
 				/*while (iter.Next())
 				{
@@ -105,6 +112,15 @@ static class Program
 			start = sw.ElapsedMilliseconds;
 
 			Console.WriteLine(scope $"query done in {(start - last)} ms");
+		}
+	}
+
+	static void system(Query<(Position*, Velocity*), (With<Position>, With<Velocity>)> query)
+	{
+		for (var (pos, vel) in ref query)
+		{
+			pos.X *= vel.X;
+			pos.Y *= vel.Y;
 		}
 	}
 }

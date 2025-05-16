@@ -9,6 +9,7 @@ using internal tecs;
 public class Scheduler
 {
 	private LinkedList<FuncSystem>[] _systems = new LinkedList<FuncSystem>[(.)Stages.OnExit + 1] ~ { for (let list in _) { ClearAndDeleteItems!(list); delete list; } delete _; }
+	private readonly Commands _commands ~ delete _commands;
 
 	public this(World world)
 	{
@@ -16,13 +17,98 @@ public class Scheduler
 
 		for (var i < _systems.Count)
 			_systems[i] = new .();
+
+		_commands = new .(World);
+		AddSystemParam(_commands);
 	}
 
 	public World World { get; }
 
 
-	public void AddSystemParam<T>(T param)
+	public void AddResource<T>(T resource)
+		=> AddSystemParam(new Res<T>() { Value = resource });
+
+	public void AddSystemParam<T>(T param) where T : ISystemParam<World>
 	{
+		var ph = Placeholder<T>();
+		ph.Value = param;
+		World.Entity<Placeholder<T>>().Set(ph);
+	}
+
+	public bool ResourceExists<T>() where T : ISystemParam<World>
+		=> World.Entity<Placeholder<T>>().Has<Placeholder<T>>();
+
+
+	public void RunOnce()
+	{
+		let ticks = 0u; //World.Update();
+
+		RunStage(.Startup, ticks);
+		//_systems[(.)Stages.Startup].Clear();
+
+		RunStage(.OnExit, ticks);
+		RunStage(.OnEnter, ticks);
+
+		for (var stage = Stages.FrameStart; stage <= .FrameEnd; stage += 1)
+		{
+			RunStage(stage, ticks);
+		}
+	}
+
+	private void RunStage(Stages stage, uint32 ticks)
+	{
+		let systems = _systems[(.)stage];
+
+		for (let sys in systems)
+		{
+			sys.Run(ticks);
+		}
+	}
+
+
+	/*public FuncSystem OnUpdate(function void() fn)
+	{
+		delegate bool(SystemTicks ticks, World world, delegate bool() conditions) dlg = new (ticks, world, conditions) =>
+			{
+				if (conditions?.Invoke() ?? true)
+				{
+					fn();
+					return true;
+				}
+
+				return false;
+			};
+
+		var system = new FuncSystem(World, (.)dlg);
+
+		_systems[(.)Stages.Update].AddLast(system);
+
+		return system;
+	}*/
+
+	public FuncSystem OnUpdate<T0>(function void(T0) fn)
+		where T0 : ISystemParam<World>, IIntoSystemParam<World, T0>
+	{
+		delegate bool(SystemTicks, World, delegate bool()) dlg = new [=fn] (ticks, world, conditions) =>
+			{
+				if (conditions?.Invoke() ?? true)
+				{
+					let t0 = T0.Generate(world);
+
+					t0.Lock(ticks);
+					fn(t0);
+					t0.Unlock();
+					return true;
+				}
+
+				return false;
+			};
+
+		var system = new FuncSystem(World, dlg);
+
+		_systems[(.)Stages.Update].AddLast(system);
+
+		return system;
 	}
 }
 
@@ -60,7 +146,7 @@ public abstract class SystemParam<T> : ISystemParam<T>
 public sealed class FuncSystem
 {
 	typealias ValidatorFn = delegate bool(SystemTicks ticks, World world);
-	typealias SystemFn = function bool(SystemTicks ticks, World world, delegate bool() validator);
+	typealias SystemFn = delegate bool(SystemTicks ticks, World world, delegate bool() validator);
 
 	private readonly delegate bool() _validator = new => ValidateConditions ~ delete _;
 	private readonly List<ValidatorFn> _conditions = new .() ~ { _.Clear(); delete _; }

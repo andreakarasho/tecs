@@ -111,8 +111,6 @@ public sealed class World : IDisposable
 		return ref meta;
 	}
 
-	public QueryBuilder QueryBuilder() => new QueryBuilder(this);
-
 	public void BeginDeferred() { }
 
 	public void EndDeferred() { }

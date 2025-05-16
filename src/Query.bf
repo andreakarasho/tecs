@@ -8,7 +8,7 @@ public sealed class Query
 {
 	private static readonly Comparison<IQueryTerm> _termComparer = new => CompareTerms ~ delete _;
 
-	private readonly IQueryTerm[] _terms ~ delete _;
+	private readonly IQueryTerm[] _terms ~ { for (var term in _) delete term; delete _; };
 	private readonly List<Archetype> _matcherArchetypes = new .() ~ { _.Clear(); delete _; };
 	private readonly int[] _indices ~ delete _;
 	private uint64 _lastArchetypeMatched;
@@ -28,6 +28,11 @@ public sealed class Query
 
 		_indices = new int[TermAccess.Count];
 		_indices.SetAll(-1);
+	}
+
+	public ~this()
+	{
+		Console.WriteLine();
 	}
 
 
@@ -59,7 +64,6 @@ public class QueryBuilder
 {
 	private readonly World _world;
 	private readonly Dictionary<uint64, IQueryTerm> _terms = new .() ~ { _.Clear(); delete _; };
-	private Query _query;
 
 	internal this(World world)
 	{
@@ -88,25 +92,24 @@ public class QueryBuilder
 	public Self Term(IQueryTerm term)
 	{
 		let id = term.Id();
+
+		if (_terms.ContainsKey(id))
+		{
+			delete term;
+			return this;
+		}
 		_terms[id] = term;
 		return this;
 	}
 
 	public Query Build()
 	{
-		if (_query != null)
-		{
-			delete _query;
-			_query = null;
-		}
-
 		var tmp = scope IQueryTerm[_terms.Count];
 		var i = 0;
 		for (var (k, val) in _terms)
 			tmp[i++] = val;
 
-		_query ??= new .(_world, params tmp);
-		return _query;
+		return new .(_world, params tmp);
 	}
 }
 
