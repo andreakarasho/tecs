@@ -154,7 +154,7 @@ public sealed class FuncSystem
 
 	private readonly delegate bool() _validator = new => ValidateConditions ~ delete _;
 	private readonly List<ValidatorFn> _conditions = new .() ~ { _.Clear(); delete _; }
-	private readonly SystemFn _system;
+	private readonly SystemFn _system ~ delete _;
 	private readonly World _world;
 
 
