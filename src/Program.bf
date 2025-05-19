@@ -10,7 +10,7 @@ static class Program
 {
 	public static void Main(String[] args)
 	{
-		const int TOTAL_ENTITIES = 524288 * 2 * 1 / 4;
+		const int TOTAL_ENTITIES = 524288 * 2 * 1;
 
 
 		var world = scope World();
@@ -41,10 +41,10 @@ static class Program
 		}
 
 
-
-		function void(Query<(Position*, Velocity*), (With<Position>, With<Velocity>)>) fn = => system;
+		function void(Query<(Position*, Velocity*)>) fn = => system;
 
 		scheduler.OnUpdate(fn);
+
 
 		/*var q = Query<(Position*, Velocity*), (With<Position>, With<Velocity>)>.Generate(world);
 		var q2 = Query<(Entity, Position*, Velocity*), With<Position>>.Generate(world);
@@ -65,7 +65,7 @@ static class Program
 		sw.Start();
 
 		var ll = 0;
-		while (ll++ < 1)
+		while (true)
 		{
 			for (var i < 3600)
 			{
@@ -116,7 +116,7 @@ static class Program
 		}
 	}
 
-	static void system(Query<(Position*, Velocity*), (With<Position>, With<Velocity>)> query)
+	static void system(Query<(Position*, Velocity*)> query)
 	{
 		for (var (pos, vel) in ref query)
 		{

@@ -27,7 +27,7 @@ public class Scheduler
 	public void AddResource<T>(T resource)
 		=> AddSystemParam(new Res<T>() { Value = resource });
 
-	public void AddSystemParam<T>(T param) where T : ISystemParam<Scheduler>, class
+	public void AddSystemParam<T>(T param) where T : ISystemParam<Self>, class
 	{
 		_systemParamsCache.Add(param);
 
@@ -36,10 +36,10 @@ public class Scheduler
 		World.Entity<Placeholder<T>>().Set(ph);
 	}
 
-	public bool ResourceExists<T>() where T : ISystemParam<Scheduler>
+	public bool ResourceExists<T>() where T : ISystemParam<Self>
 		=> World.Entity<Placeholder<T>>().Has<Placeholder<T>>();
 
-	public T GetResource<T>() where T : ISystemParam<Scheduler>
+	public T GetResource<T>() where T : ISystemParam<Self>
 		=> World.Entity<Placeholder<T>>().Get<Placeholder<T>>().Value;
 
 
@@ -69,8 +69,7 @@ public class Scheduler
 		}
 	}
 
-
-	/*public FuncSystem OnUpdate(function void() fn)
+	public FuncSystem OnUpdate(function void() fn)
 	{
 		delegate bool(SystemTicks ticks, World world, delegate bool() conditions) dlg = new (ticks, world, conditions) =>
 			{
@@ -88,31 +87,75 @@ public class Scheduler
 		_systems[(.)Stages.Update].AddLast(system);
 
 		return system;
-	}*/
+	}
 
-	public FuncSystem OnUpdate<T0>(function void(T0) fn)
-		where T0 : ISystemParam<Scheduler>, IIntoSystemParam<Scheduler, T0>
+	[OnCompile(.TypeInit), Comptime]
+	public static void Generate()
 	{
-		delegate bool(SystemTicks, World, delegate bool()) dlg = new [=fn, =this] (ticks, world, conditions) =>
-			{
-				if (conditions?.Invoke() ?? true)
-				{
-					let t0 = T0.Generate(this);
+		var f = scope String();
+		for (var i < 16)
+		{
+			var tArgs = scope String();
+			sequence(i, tArgs, ", ", "T{}");
 
-					t0.Lock(ticks);
-					fn(t0);
-					t0.Unlock();
-					return true;
-				}
+			var tWhere = scope String();
+			sequence(i, tWhere, "\n", "where T{0}: ISystemParam<Self>, IIntoSystemParam<Self, T{0}>");
 
-				return false;
-			};
+			var tGenerate = scope String();
+			sequence(i, tGenerate, "\n", "let t{0} = T{0}.Generate(this);");
 
-		var system = new FuncSystem(World, dlg);
+			var tLocks = scope String();
+			sequence(i, tLocks, "\n", "t{0}.Lock(ticks);");
 
-		_systems[(.)Stages.Update].AddLast(system);
+			var tUnlocks = scope String();
+			sequence(i, tUnlocks, "\n", "t{0}.Unlock();");
 
-		return system;
+			var tFnArgs = scope String();
+			sequence(i, tFnArgs, ", ", "t{0}");
+
+			f..Append(scope $"""
+
+				public FuncSystem OnUpdate<{tArgs}>(function void({tArgs}) fn)
+					{tWhere}
+				{{
+					delegate bool(SystemTicks, World, delegate bool()) dlg = new [=fn, =this] (ticks, world, conditions) =>
+					{{
+						if (conditions?.Invoke() ?? true)
+						{{
+							{tGenerate}
+
+							{tLocks}
+							fn({tFnArgs});
+							{tUnlocks}
+							return true;
+						}}
+
+						return false;
+					}};
+
+					var system = new FuncSystem(World, dlg);
+	
+					_systems[(.)Stages.Update].AddLast(system);
+	
+					return system;	
+				}}
+		
+				""");
+		}
+
+		Compiler.EmitTypeBody(typeof(Self), f);
+	}
+
+	[Comptime]
+	private static void sequence(int count, String str, StringView split, StringView format)
+	{
+		for (var i <= count)
+		{
+			str..AppendF(format, i);
+
+			if (i + 1 <= count)
+				str..Append(split);
+		}
 	}
 }
 
@@ -242,6 +285,12 @@ public sealed class Res<T> : SystemParam<Scheduler>, IIntoSystemParam<Scheduler,
 
 		return res;
 	}
+
+	[Inline]
+	public static mut T operator ->(ref Res<T> res)
+	{
+		return ref res.Value;
+	}
 }
 
 public sealed class Local<T> : SystemParam<Scheduler>, IIntoSystemParam<Scheduler, Local<T>>
@@ -282,6 +331,34 @@ public sealed class Query<D, F> : SystemParam<Scheduler>, IIntoSystemParam<Sched
 		let y = FilterGen<F>.Build(builder);
 
 		var query = new Query<D, F>(builder.Build());
+
+		arg.AddSystemParam(query);
+
+		return query;
+	}
+}
+
+public sealed class Query<D> : SystemParam<Scheduler>, IIntoSystemParam<Scheduler, Query<D>>
+	where D : Tuple
+{
+	private readonly Query _query ~ delete _;
+
+	internal this(Query query) => _query = query;
+
+
+	public Data<D> GetEnumerator() => Data<D>(_query.Iter());
+
+
+	public static Query<D> Generate(Scheduler arg)
+	{
+		if (arg.ResourceExists<Query<D>>())
+			return arg.GetResource<Query<D>>();
+
+		let builder = scope QueryBuilder(arg.World);
+
+		let x = DataGen<D>.Build(builder);
+
+		var query = new Query<D>(builder.Build());
 
 		arg.AddSystemParam(query);
 
